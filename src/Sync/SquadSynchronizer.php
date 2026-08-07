@@ -1,0 +1,251 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Wss\FlarumLineup\Sync;
+
+use Carbon\Carbon;
+use Illuminate\Database\ConnectionInterface;
+use InvalidArgumentException;
+use RuntimeException;
+use Wss\FlarumLineup\Api\ApiFootballClient;
+use Wss\FlarumLineup\Image\RemoteImageCacheService;
+use Wss\FlarumLineup\Model\Player;
+use Wss\FlarumLineup\Model\Team;
+
+final class SquadSynchronizer
+{
+    private const PROVIDER = 'api-football';
+
+    private ApiFootballClient $apiFootballClient;
+
+    private ConnectionInterface $database;
+
+    private SyncSafetyGuard $syncSafetyGuard;
+
+    private SyncLockManager $syncLockManager;
+
+    private ?RemoteImageCacheService $remoteImageCache;
+
+    public function __construct(
+        ApiFootballClient $apiFootballClient,
+        ConnectionInterface $database,
+        ?SyncSafetyGuard $syncSafetyGuard = null,
+        ?SyncLockManager $syncLockManager = null,
+        ?RemoteImageCacheService $remoteImageCache = null
+    ) {
+        $this->apiFootballClient = $apiFootballClient;
+        $this->database = $database;
+        $this->syncSafetyGuard = $syncSafetyGuard
+            ?? new SyncSafetyGuard();
+        $this->syncLockManager = $syncLockManager
+            ?? new SyncLockManager($database);
+        $this->remoteImageCache = $remoteImageCache;
+    }
+
+    /**
+     * @return array{
+     *     teams: int,
+     *     received: int,
+     *     created: int,
+     *     updated: int,
+     *     deactivated: int
+     * }
+     */
+    public function synchronizeAll(): array
+    {
+        return $this->syncLockManager->run(
+            fn (): array => $this->synchronizeAllUnlocked()
+        );
+    }
+
+    /**
+     * @return array{
+     *     teams: int,
+     *     received: int,
+     *     created: int,
+     *     updated: int,
+     *     deactivated: int
+     * }
+     */
+    private function synchronizeAllUnlocked(): array
+    {
+        $teams = Team::query()
+            ->where('is_active', true)
+            ->orderBy('id')
+            ->get();
+
+        if ($teams->isEmpty()) {
+            throw new RuntimeException(
+                'No active teams are available for squad synchronization.'
+            );
+        }
+
+        $result = [
+            'teams' => 0,
+            'received' => 0,
+            'created' => 0,
+            'updated' => 0,
+            'deactivated' => 0,
+        ];
+
+        foreach ($teams as $team) {
+            $teamResult = $this->synchronizeTeamUnlocked(
+                $team
+            );
+
+            ++$result['teams'];
+            $result['received'] += $teamResult['received'];
+            $result['created'] += $teamResult['created'];
+            $result['updated'] += $teamResult['updated'];
+            $result['deactivated'] += $teamResult['deactivated'];
+        }
+
+        return $result;
+    }
+
+    /**
+     * @return array{
+     *     teamId: int,
+     *     apiTeamId: int,
+     *     teamName: string,
+     *     received: int,
+     *     created: int,
+     *     updated: int,
+     *     deactivated: int
+     * }
+     */
+    public function synchronizeTeam(Team $team): array
+    {
+        return $this->syncLockManager->run(
+            fn (): array => $this->synchronizeTeamUnlocked(
+                $team
+            )
+        );
+    }
+
+    /**
+     * @return array{
+     *     teamId: int,
+     *     apiTeamId: int,
+     *     teamName: string,
+     *     received: int,
+     *     created: int,
+     *     updated: int,
+     *     deactivated: int
+     * }
+     */
+    private function synchronizeTeamUnlocked(
+        Team $team
+    ): array {
+        if (
+            !$team->exists
+            || (int) $team->api_team_id <= 0
+        ) {
+            throw new InvalidArgumentException(
+                'A persisted team with a valid API team ID is required.'
+            );
+        }
+
+        $players = $this->apiFootballClient->fetchSquad(
+            (int) $team->api_team_id
+        );
+
+        $existingActivePlayers = (int) Player::query()
+            ->where('team_id', $team->id)
+            ->where('provider', self::PROVIDER)
+            ->where('is_active', true)
+            ->count();
+
+        $this->syncSafetyGuard
+            ->assertSquadResponseIsComplete(
+                count($players),
+                $existingActivePlayers
+            );
+
+        if ($this->remoteImageCache !== null) {
+            foreach ($players as $playerData) {
+                $this->remoteImageCache
+                    ->cachePlayerPhoto(
+                        (int) $playerData[
+                            'apiPlayerId'
+                        ],
+                        $playerData['photoUrl']
+                    );
+            }
+        }
+
+        $now = Carbon::now();
+
+        return $this->database->transaction(
+            function () use (
+                $team,
+                $players,
+                $now
+            ): array {
+                $created = 0;
+                $updated = 0;
+                $providerPlayerIds = [];
+
+                foreach ($players as $playerData) {
+                    $providerPlayerId = (string) (
+                        $playerData['apiPlayerId']
+                    );
+
+                    $providerPlayerIds[] = $providerPlayerId;
+
+                    $player = Player::query()->firstOrNew([
+                        'provider' => self::PROVIDER,
+                        'provider_player_id' => $providerPlayerId,
+                    ]);
+
+                    $wasRecentlyCreated = !$player->exists;
+
+                    $player->fill([
+                        'team_id' => $team->id,
+                        'name' => $playerData['name'],
+                        'age' => $playerData['age'],
+                        'shirt_number' => (
+                            $playerData['shirtNumber']
+                        ),
+                        'position' => $playerData['position'],
+                        'photo_url' => $playerData['photoUrl'],
+                        'is_active' => true,
+                        'last_synced_at' => $now,
+                    ]);
+
+                    $player->save();
+
+                    if ($wasRecentlyCreated) {
+                        ++$created;
+                    } else {
+                        ++$updated;
+                    }
+                }
+
+                $deactivated = Player::query()
+                    ->where('team_id', $team->id)
+                    ->where('provider', self::PROVIDER)
+                    ->whereNotIn(
+                        'provider_player_id',
+                        $providerPlayerIds
+                    )
+                    ->where('is_active', true)
+                    ->update([
+                        'is_active' => false,
+                        'last_synced_at' => $now,
+                    ]);
+
+                return [
+                    'teamId' => (int) $team->id,
+                    'apiTeamId' => (int) $team->api_team_id,
+                    'teamName' => (string) $team->name,
+                    'received' => count($players),
+                    'created' => $created,
+                    'updated' => $updated,
+                    'deactivated' => $deactivated,
+                ];
+            }
+        );
+    }
+}
