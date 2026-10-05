@@ -1,0 +1,12 @@
+name: Flarum Lineup PHP
+
+on: [workflow_dispatch, push, pull_request]
+
+jobs:
+  run:
+    uses: flarum/framework/.github/workflows/REUSABLE_backend.yml@main
+    with:
+      enable_backend_testing: true
+      php_versions: '["8.1", "8.4"]'
+
+      backend_directory: .
