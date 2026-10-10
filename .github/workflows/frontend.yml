@@ -1,0 +1,23 @@
+name: Flarum Lineup JS
+
+on: [workflow_dispatch, push]
+
+jobs:
+  run:
+    uses: flarum/framework/.github/workflows/REUSABLE_frontend.yml@main
+    with:
+      enable_bundlewatch: false
+      enable_prettier: true
+      enable_typescript: true
+
+      frontend_directory: ./js
+      backend_directory: .
+      js_package_manager: npm
+      node_version: 20
+
+      # The reusable Flarum workflow commits generated JS assets automatically
+      # when the current branch matches main_git_branch. Built assets are
+      # committed explicitly in this repository, so CI must never write to main.
+      main_git_branch: __no_ci_autocommit__
+    secrets:
+      bundlewatch_github_token: ${{ secrets.BUNDLEWATCH_GITHUB_TOKEN }}
