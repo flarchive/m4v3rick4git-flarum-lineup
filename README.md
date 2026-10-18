@@ -2,13 +2,18 @@
 
 > **Read-only archive of released versions of m4v3rick4git/flarum-lineup.** Not for installation: use [Packagist](https://packagist.org/packages/m4v3rick4git/flarum-lineup) or the [upstream repository](https://github.com/m4v3rick4git/flarum-lineup).
 
-**0** versions archived · Latest: [`v0.1.5`](https://github.com/flarchive/m4v3rick4git-flarum-lineup/tree/archive/v0.1.5) · License: `MIT` · Flarum: `^1.8`
+**6** versions archived · Latest: [`v0.1.5`](https://github.com/flarchive/m4v3rick4git-flarum-lineup/tree/archive/v0.1.5) · License: `MIT` · Flarum: `^1.8`
 
 ## Archived Versions
 
 | Version | Released | Flarum | Source |
 |---|---|---|---|
-| — | — | — | — |
+| `v0.1.0` | 2026-08-04 | `^1.2.0` | [Browse](https://github.com/flarchive/m4v3rick4git-flarum-lineup/tree/archive/v0.1.0) |
+| `v0.1.1` | 2026-08-07 | `^1.8` | [Browse](https://github.com/flarchive/m4v3rick4git-flarum-lineup/tree/archive/v0.1.1) |
+| `v0.1.2` | 2026-08-07 | `^1.8` | [Browse](https://github.com/flarchive/m4v3rick4git-flarum-lineup/tree/archive/v0.1.2) |
+| `v0.1.3` | 2026-10-05 | `^1.8` | [Browse](https://github.com/flarchive/m4v3rick4git-flarum-lineup/tree/archive/v0.1.3) |
+| `v0.1.4` | 2026-10-10 | `^1.8` | [Browse](https://github.com/flarchive/m4v3rick4git-flarum-lineup/tree/archive/v0.1.4) |
+| `v0.1.5` | 2026-10-18 | `^1.8` | [Browse](https://github.com/flarchive/m4v3rick4git-flarum-lineup/tree/archive/v0.1.5) |
 
 Catalog entry: [packages/m4v3rick4git-flarum-lineup.json](https://github.com/flarchive/archive-index/blob/main/packages/m4v3rick4git-flarum-lineup.json)
 
